@@ -1,12 +1,3 @@
-/*
-
-×÷Õß:º«ÖÇºè
-
-han.zhihong@qq.com
-
-*/
-
-
 #ifndef __CK_PRINTF_MSG_H_
 #ifdef __cplusplus
 extern "C"{
@@ -18,6 +9,9 @@ extern "C"{
 #include <time.h>
 #include "encoding.h"
 
+//æ˜¯å¦æ‰“å°è¾“å‡ºåˆ°a.txtæ–‡ä»¶
+#define PRINT_TO_FILE 	0
+
 #ifdef _WIN32
 		#include <windows.h>
 		#define PRINTMSG_LOCK_CS(p)					EnterCriticalSection(p)	
@@ -25,7 +19,15 @@ extern "C"{
 		#define PRINTMSG_INIT_CS(p)					InitializeCriticalSection(p)
 		#define PRINTMSG_DELETE_CS(p)				DeleteCriticalSection(p)					
 		#define PRINTMSG_TYPE_CS					CRITICAL_SECTION 
-		#define VSNPRINTF(a,b,c,d) _vsnprintf(a,b,c,d)
+		//#define VSNPRINTF(a,b,c,d) _vsnprintf(a,b,c,d)
+		#define VSNPRINTF(a,b,c,d) _vsnprintf_s(a,sizeof(a),b,c,d)
+
+		#define strcasecmp  strcmpi
+		#define strtok_r    strtok_s
+		#define snprintf    sprintf_s
+
+		#define localtime_r(a,b) localtime_s((struct tm*)b,(const time_t*)a)
+		#define asctime_r(a,b) asctime_s(b,a)
 
 #else
 		#include <sys/time.h>
@@ -36,6 +38,7 @@ extern "C"{
 		/* thread operate */
 		#include <pthread.h>
 		#include <semaphore.h>
+		#include <stdarg.h>
 
 		#define VSNPRINTF(a,b,c,d) vsnprintf(a,b,c,d)
 	
@@ -44,13 +47,18 @@ extern "C"{
 		#define PRINTMSG_INIT_CS(p)					sem_init(p,0,1)
 		#define PRINTMSG_DELETE_CS(p)				sem_destroy(p)
 		#define PRINTMSG_TYPE_CS					sem_t
+	
+		#define strcmpi     strcasecmp
+
+		#define localtime_s(a,b) localtime_r(b,a)
+		#define asctime_s(a,b) asctime_r(b,a)
 #endif
 
-//Ä£¿éÈ«¾Ö²ÎÊı
-int g_ckPrintMsg = 0;
+//æ¨¡å—å…¨å±€å‚æ•°
+int g_ckPrintDebugMsg = 0;
 int g_ckPrintErrCount=0;
 
-//·ÀÖ¹ÔÚWINDOWSÆ½Ì¨ÏÂ´òÓ¡ÎÄ×ÖÑÕÉ«ÔÚ¶àÏß³ÌÀï»ìÂÒ
+//é˜²æ­¢åœ¨WINDOWSå¹³å°ä¸‹æ‰“å°æ–‡å­—é¢œè‰²åœ¨å¤šçº¿ç¨‹é‡Œæ··ä¹±
 #ifdef Q_OS_WIN32
 PRINTMSG_TYPE_CS g_ckPrintfMsgCSEndale;
 #endif
@@ -62,9 +70,9 @@ void PrintMsgInit()
 	#endif
 }
 
-void PrintMsgEnable(int isEnable)
+void PrintDebugMsgEnable(int isEnable)
 {
-	g_ckPrintMsg=isEnable;
+	g_ckPrintDebugMsg=isEnable;
 }
 
 int getMsgErrCount()
@@ -72,219 +80,383 @@ int getMsgErrCount()
 	return g_ckPrintErrCount;
 }
 
-void SYS_PRINTF(char*format,...)
+void SYS_PRINTF(const char*format,...)
 {
-	char buf[512];
+	char tme_buf[30];
+	time_t tt;		
+	struct tm ptm={0};
+	char buf[1024];
 	va_list args;
-	va_start(args, format);
-	
-	VSNPRINTF(buf,512,format,args);
-
-
 	#ifdef Q_OS_WIN32
 	PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);
 	#endif
+	va_start(args, format);
+	
+	//æ—¶é—´
+	tt=time(NULL);
+	localtime_r(&tt,&ptm);
+	snprintf(tme_buf,sizeof(tme_buf), "%02d:%02d:%02d",
+			ptm.tm_hour,
+			ptm.tm_min,
+			ptm.tm_sec);
 
-   	printf("System-: %s\r\n",buf);
-
+	VSNPRINTF(buf,1024,format,args);
+	
+   	printf("System-[%s]: %s\r\n",tme_buf,buf);
+	
+	va_end(args);
 	#ifdef Q_OS_WIN32
 	PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
 	#endif
 
-	va_end(args);
+	#if PRINT_TO_FILE
+	{
+	FILE*fp=fopen("./a.txt","a+");
+	fprintf(fp,"System-[%s]: %s\r\n",tme_buf,buf);
+	fclose(fp);
+	}
+	#endif
 }
-		
-void ERR_PRINTF(char*format,...)
+void WARNING_PRINTF(const char*format,...)
 {
-		char buf[512];
+	char tme_buf[30];
+		time_t tt;		
+		struct tm ptm={0};
+		char buf[1024];
 		va_list args;
+		#ifdef Q_OS_WIN32
+		PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);
+		#endif
 		va_start(args, format);
 	
-		//ÊÕ¼¯´íÎóÏûÏ¢ÊıÁ¿
+		//æ”¶é›†é”™è¯¯æ¶ˆæ¯æ•°é‡
 		g_ckPrintErrCount++;
+
+		//æ—¶é—´
+		tt=time(NULL);
+		localtime_r(&tt,&ptm);
+		snprintf(tme_buf,sizeof(tme_buf), "%02d:%02d:%02d",
+		ptm.tm_hour,
+		ptm.tm_min,
+		ptm.tm_sec);
+
+		VSNPRINTF(buf,1024,format,args);
 		//----------------------
-		//´òÓ¡ÏûÏ¢
-		VSNPRINTF(buf,512,format,args);
+		//æ‰“å°æ¶ˆæ¯
+		VSNPRINTF(buf,1024,format,args);
 		#ifdef Q_OS_WIN32
-			PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);
-			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_RED|FOREGROUND_INTENSITY);
+			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_RED|FOREGROUND_GREEN|FOREGROUND_INTENSITY);
 		#endif
-   			printf("Err-: %s\r\n",buf);
+   			printf("WARNING-[%s]: %s\r\n",tme_buf,buf);
 		#ifdef Q_OS_WIN32
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_BLUE |FOREGROUND_GREEN|FOREGROUND_RED );
-			PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
+			
 		#endif
 		va_end(args);
-}
+		#ifdef Q_OS_WIN32
+		PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
+		#endif
 
-void ALERT_PRINTF_UTF8(char*format,...)
-{
-	if(g_ckPrintMsg)
+	#if PRINT_TO_FILE
 	{
-		char gbValue[1024]={0};
-		char buf[512];
-		va_list args;
+	FILE*fp=fopen("./a.txt","a+");
+	fprintf(fp,"WARNING-[%s]: %s\r\n",tme_buf,buf);
+	fclose(fp);
+	}
+	#endif
+}
+void ERR_PRINTF(const char*format,...)
+{
 		char tme_buf[30];
 		time_t tt;		
-		struct tm *ptm = NULL;
-
-		//Ê±¼ä
-		tt=time(NULL);
-		ptm = localtime(&tt);
-		if(ptm) 
-		sprintf(tme_buf, "%02d:%02d:%02d",
-				ptm->tm_hour,
-				ptm->tm_min,
-				ptm->tm_sec);
-
-		//Êı¾İ´¦Àí	
+		struct tm ptm={0};
+		char buf[1024];
+		va_list args;
+		#ifdef Q_OS_WIN32
+		PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);
+		#endif
 		va_start(args, format);
 	
-		VSNPRINTF(buf,512,format,args);
+		//æ”¶é›†é”™è¯¯æ¶ˆæ¯æ•°é‡
+		g_ckPrintErrCount++;
+
+		//æ—¶é—´
+		tt=time(NULL);
+		localtime_r(&tt,&ptm);
+		snprintf(tme_buf,sizeof(tme_buf), "%02d:%02d:%02d",
+		ptm.tm_hour,
+		ptm.tm_min,
+		ptm.tm_sec);
+
+		VSNPRINTF(buf,1024,format,args);
+		//----------------------
+		//æ‰“å°æ¶ˆæ¯
+		VSNPRINTF(buf,1024,format,args);
 		#ifdef Q_OS_WIN32
-			PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);			
-			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY);
+			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_RED|FOREGROUND_INTENSITY);
 		#endif
-			FROM_UTF8(buf,strlen(buf),gbValue);
-   			printf("Alert-[%s]: %s\r\n",tme_buf,gbValue);
+   			printf("Err-[%s]: %s\r\n",tme_buf,buf);
 		#ifdef Q_OS_WIN32
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_BLUE |FOREGROUND_GREEN|FOREGROUND_RED );
-			PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
+			
 		#endif
 		va_end(args);
+		#ifdef Q_OS_WIN32
+		PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
+		#endif
+
+	#if PRINT_TO_FILE
+	{
+	FILE*fp=fopen("./a.txt","a+");
+	fprintf(fp,"Err-[%s]: %s\r\n",tme_buf,buf);
+	fclose(fp);
 	}
+	#endif
+}
+
+void ALERT_PRINTF_UTF8(const char*format,...)
+{	
+	char gbValue[1024]={0};
+	char buf[512];
+	va_list args;
+	char tme_buf[30];
+	time_t tt;		
+	struct tm ptm={0};
+
+	#ifdef Q_OS_WIN32
+	PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);	
+	#endif
+	//æ—¶é—´
+	tt=time(NULL);
+	localtime_r(&tt,&ptm);
+
+	snprintf(tme_buf,sizeof(tme_buf), "%02d:%02d:%02d",
+			ptm.tm_hour,
+			ptm.tm_min,
+			ptm.tm_sec);
+
+	//æ•°æ®å¤„ç†	
+	va_start(args, format);
+	
+	VSNPRINTF(buf,512,format,args);
+	#ifdef Q_OS_WIN32		
+		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_RED|FOREGROUND_BLUE|FOREGROUND_INTENSITY);
+	#endif
+		FROM_UTF8(buf,strlen(buf),gbValue);
+   		printf("Alert-[%s]: %s\r\n",tme_buf,gbValue);
+	#ifdef Q_OS_WIN32
+		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_BLUE |FOREGROUND_GREEN|FOREGROUND_RED );
+			
+	#endif
+	va_end(args);
+	#ifdef Q_OS_WIN32
+	PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
+	#endif
+	
+#if PRINT_TO_FILE
+{
+FILE*fp=fopen("./a.txt","a+");
+fprintf(fp,"Alert-[%s]: %s\r\n",tme_buf, gbValue);
+fclose(fp);
+}
+#endif
 }
 
 /*****
 *
-* ´òÓ¡ºÚµ×ÂÌÉ«×Ö
+* æ‰“å°é»‘åº•ç»¿è‰²å­—
 */
-void DEBUG_PRINTF_UTF8(char*format,...)
+void DEBUG_PRINTF(const char*format,...)
 {
-	if(g_ckPrintMsg)
+	if(g_ckPrintDebugMsg)
+	{
+		char buf[1024];
+		va_list args;
+		char tme_buf[30];
+		time_t tt;		
+		struct tm ptm;
+
+		#ifdef Q_OS_WIN32
+		PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);
+		#endif
+		
+		//æ—¶é—´
+		tt=time(NULL);
+		localtime_r(&tt,&ptm);
+
+		snprintf(tme_buf,sizeof(tme_buf), "%02d:%02d:%02d",
+				ptm.tm_hour,
+				ptm.tm_min,
+				ptm.tm_sec);
+
+		va_start(args, format);
+	
+		VSNPRINTF(buf,512,format,args);
+		#ifdef Q_OS_WIN32
+			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_GREEN|FOREGROUND_INTENSITY);
+		#endif
+   			printf("Debug-[%s]: %s\r\n",tme_buf,buf);
+		#ifdef Q_OS_WIN32
+			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_BLUE |FOREGROUND_GREEN|FOREGROUND_RED );
+		#endif
+		va_end(args);
+
+		#ifdef Q_OS_WIN32
+		PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
+		#endif
+	
+	#if PRINT_TO_FILE
+	{
+	FILE*fp=fopen("./a.txt","a+");
+	fprintf(fp,"Debug-[%s]: %s\r\n",tme_buf, gbValue);
+	fclose(fp);
+	}
+	#endif
+	}
+
+}
+
+void DEBUG_PRINTF_UTF8(const char*format,...)
+{
+	if(g_ckPrintDebugMsg)
 	{
 		char gbValue[1024]={0};
 		char buf[512];
 		va_list args;
 		char tme_buf[30];
 		time_t tt;		
-		struct tm *ptm = NULL;
+		struct tm ptm;
 
-		//Ê±¼ä
+		#ifdef Q_OS_WIN32
+		PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);
+		#endif
+		
+		//æ—¶é—´
 		tt=time(NULL);
-		ptm = localtime(&tt);
-		if(ptm)
-		sprintf(tme_buf, "%02d:%02d:%02d",
-				ptm->tm_hour,
-				ptm->tm_min,
-				ptm->tm_sec);
+		localtime_r(&tt,&ptm);
+
+		snprintf(tme_buf,sizeof(tme_buf), "%02d:%02d:%02d",
+				ptm.tm_hour,
+				ptm.tm_min,
+				ptm.tm_sec);
 
 		va_start(args, format);
 	
 		VSNPRINTF(buf,512,format,args);
 		#ifdef Q_OS_WIN32
-			PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_GREEN|FOREGROUND_INTENSITY);
 		#endif
-			
 			FROM_UTF8(buf,strlen(buf),gbValue);
    			printf("Debug-[%s]: %s\r\n",tme_buf,gbValue);
 		#ifdef Q_OS_WIN32
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_BLUE |FOREGROUND_GREEN|FOREGROUND_RED );
-			PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
 		#endif
 		va_end(args);
+
+		#ifdef Q_OS_WIN32
+		PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
+		#endif
+	
+	#if PRINT_TO_FILE
+	{
+	FILE*fp=fopen("./a.txt","a+");
+	fprintf(fp,"Debug-[%s]: %s\r\n",tme_buf, gbValue);
+	fclose(fp);
+	}
+	#endif
 	}
 
 }
 
 /*****
 *
-* ´òÓ¡ºÚµ×»ÆÉ«×Ö
+* æ‰“å°é»‘åº•é»„è‰²å­—
 */
-void WARNING_PRINTF_UTF8(char*format,...)
+void WARNING_PRINTF_UTF8(const char*format,...)
 {
-	if(g_ckPrintMsg)
-	{
-		char gbValue[1024]={0};
-		char buf[512];
-		va_list args;
-		char tme_buf[30];
-		time_t tt;		
-		struct tm *ptm = NULL;
+	char gbValue[1024]={0};
+	char buf[512];
+	va_list args;
+	char tme_buf[30];
+	time_t tt;		
+	struct tm ptm;
 
-		//Ê±¼ä
-		tt=time(NULL);
-		ptm = localtime(&tt);
-		if(ptm)
-		sprintf(tme_buf, "%02d:%02d:%02d",
-				ptm->tm_hour,
-				ptm->tm_min,
-				ptm->tm_sec);
+	//æ—¶é—´
+	tt=time(NULL);
+	localtime_r(&tt,&ptm);
 
-		//Êı¾İ´¦Àí	
-		va_start(args, format);
+	snprintf(tme_buf,sizeof(tme_buf), "%02d:%02d:%02d",
+			ptm.tm_hour,
+			ptm.tm_min,
+			ptm.tm_sec);
+
+	//æ•°æ®å¤„ç†	
+	va_start(args, format);
 	
-		VSNPRINTF(buf,512,format,args);
-		#ifdef Q_OS_WIN32
-			PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);			
-			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_RED|FOREGROUND_GREEN|FOREGROUND_INTENSITY);
-		#endif
-			FROM_UTF8(buf,strlen(buf),gbValue);
-   			printf("Warning-[%s]: %s\r\n",tme_buf,gbValue);
-		#ifdef Q_OS_WIN32
-			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_BLUE |FOREGROUND_GREEN|FOREGROUND_RED );
-			PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
-		#endif
-		va_end(args);
-	}
+	VSNPRINTF(buf,512,format,args);
+	#ifdef Q_OS_WIN32
+		PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);			
+		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_RED|FOREGROUND_GREEN|FOREGROUND_INTENSITY);
+	#endif
+		FROM_UTF8(buf,strlen(buf),gbValue);
+   		printf("Warning-[%s]: %s\r\n",tme_buf,gbValue);
+	#ifdef Q_OS_WIN32
+		SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_BLUE |FOREGROUND_GREEN|FOREGROUND_RED );
+		PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
+	#endif
+	va_end(args);
+	
+#if PRINT_TO_FILE
+{
+FILE*fp=fopen("./a.txt","a+");
+fprintf(fp,"Warning-[%s]: %s\r\n", tme_buf, gbValue);
+fclose(fp);
+}
+#endif
+
 }
 
-void DEBUG_PRINT_HEX16(unsigned char* data,int len,char*format,...)
+void DEBUG_PRINT_HEX16(unsigned char* data,int len)
 {
-	if(g_ckPrintMsg)
+	if(g_ckPrintDebugMsg)
 	{
-		va_list args;
-		char buf[512];
 		int i;
-		char data_buf[1024];
-		char buf2[6];
-		char tme_buf[30];
+		char* data_buf;
+		char tme_buf[30]={0};
 		time_t tt;		
-		struct tm *ptm = NULL;
+		struct tm ptm;
+		int j=0;
 
-		//Ê±¼ä
+		if(0==len) {return;}
+
+		j=len*8;
+		data_buf=(char*)malloc(j);
+		memset(data_buf,0,j);
+		//æ—¶é—´
 		tt=time(NULL);
-		ptm = localtime(&tt);
-		if(ptm) 
+		localtime_r(&tt,&ptm);
 
-		sprintf(tme_buf, "%02d:%02d:%02d",
-				ptm->tm_hour,
-				ptm->tm_min,
-				ptm->tm_sec);
+		snprintf(tme_buf,sizeof(tme_buf), "%02d:%02d:%02d",
+				ptm.tm_hour,
+				ptm.tm_min,
+				ptm.tm_sec);
 
-		//Êı¾İ´¦Àí						
-		data_buf[0]=0;
+		//æ•°æ®å¤„ç†
 		for(i=0;i<len;i++)
 		{
-		sprintf(buf2,"0x%02X",(unsigned char)data[i]);
-		sprintf(data_buf,"%s %s",data_buf,buf2);
+			snprintf(data_buf,j,"%s 0x%02X",data_buf,(unsigned char)data[i]);
 		}
 
-		va_start(args, format);
-
-		VSNPRINTF(buf,512,format,args);
 		#ifdef Q_OS_WIN32
 			PRINTMSG_LOCK_CS(&g_ckPrintfMsgCSEndale);
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_GREEN|FOREGROUND_INTENSITY);
 		#endif
-   			printf("Debug-[%s]: %s%s\r\n",tme_buf,buf,data_buf);
+   			printf("Debug-[%s]:%s\r\n",tme_buf,data_buf);
 		#ifdef Q_OS_WIN32
 			SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE),FOREGROUND_BLUE |FOREGROUND_GREEN|FOREGROUND_RED );
 			PRINTMSG_UNLOCK_CS(&g_ckPrintfMsgCSEndale);
 		#endif
-
-		va_end(args);
+		free(data_buf);
 	}
 }
 

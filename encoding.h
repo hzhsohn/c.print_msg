@@ -1,12 +1,3 @@
-/*
-
-×÷Õß:º«ÖÇºè
-
-han.zhihong@qq.com
-
-*/
-
-
 
 typedef struct unicode_gb
 {

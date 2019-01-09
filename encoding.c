@@ -13822,6 +13822,7 @@ char* Utf8ToGb2312(const char* utf8, int len, char *temp)
 	int byteCount = 0;
 	int i = 0;
 	int j = 0;
+	int err=0;
 
 	unsigned short unicodeKey = 0;
 	unsigned short gbKey = 0;
@@ -13873,6 +13874,14 @@ char* Utf8ToGb2312(const char* utf8, int len, char *temp)
 		}
 
 		i += byteCount;
+		if(0==byteCount)
+		{
+			err++;
+		}
+		if(err>100)
+		{
+			return NULL;
+		}
 		if (byteCount == 1)
 		{
 			j++;
